@@ -1,0 +1,75 @@
+- hosts: adel-02.vmTestAnsible-01.octopeek.com
+  user: root
+  become: yes
+  tasks:
+    - name: Check needed softwares
+      yum: name={{ item }} state=present
+      with_items:
+        - rpm
+        - curl
+        - rsync
+        - unzip
+        - tar
+        - wget
+        - openssh-clients
+        - libselinux-python
+#       - Python
+      notify: update
+
+    - name: ssh configuration without password
+      command: ssh-keygen -b 2048 -t rsa -f /root/.ssh/id_rsa -N ''
+      args:
+         creates: /root/.ssh/id_rsa
+
+    - name: copy ssh key.pub into authorized_keys file
+      authorized_key:
+        user=root
+        state=absent
+        key="/root/.ssh/id_rsa.pub"
+#      shell: cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys
+
+    - name: Permissions configurations
+      file: dest=/root/.ssh
+            owner=root
+            group=root
+            mode=700
+            dest=/root/.ssh/authorized_keys
+            owner=root
+            group=root
+            mode=0600
+
+    - name: Install NTP on the cluster
+      yum: name={{ item }} state=present
+      with_items:
+        - ntp
+      notify: update
+
+    - name: configuration of ntpd to start on boot
+      shell: chkconfig ntpd on
+
+    - name: Make sure NTP is started up
+      service: name=ntpd state=started enabled=yes
+      tags: ntp
+
+    - name: Stop Iptables
+      command: /etc/init.d/iptables stop
+
+    - name: Disable Selinux
+      lineinfile: dest=/etc/selinux/config
+                  regexp='^SELINUX='
+                  line='SELINUX=enabled'
+                  state=present
+
+    - name: UMASK configuration
+      lineinfile: dest=/etc/profile1
+                  regexp='^umask 022'
+                  state=present
+                  insertafter=EOF
+                  line='umask 022'
+
+    - name: Configuration Open File Descriptors
+      shell: ulimit -n 10000
+
+  handlers:
+    - name: update
+      yum: update_cache=yes
